@@ -1,0 +1,58 @@
+# gao configuration. Every ${VAR} is expanded from the environment at load time.
+
+llm:
+  # Any OpenAI-compatible Chat Completions endpoint.
+  base_url: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+  api_key: ${OPENAI_API_KEY}
+  model: gpt-5
+  max_tokens: 16000
+  max_tokens_param: max_completion_tokens   # use "max_tokens" for older servers / some local runtimes
+  effort: ""                    # sent as reasoning_effort when set, e.g. low | medium | high
+  max_turns: 40                 # model round-trips per issue
+  request_timeout: 10m
+  # headers:                    # extra headers, e.g. for OpenRouter
+  #   HTTP-Referer: https://github.com/wys1203/go-ai-orchestration
+
+  # Local examples:
+  #   Ollama:    base_url: http://localhost:11434/v1  model: qwen3:8b  max_tokens_param: max_tokens
+  #   vLLM:      base_url: http://localhost:8000/v1   model: <served-model-name>
+  #   OpenRouter: base_url: https://openrouter.ai/api/v1  api_key: ${OPENROUTER_API_KEY}
+
+github:
+  token: ${GITHUB_TOKEN}
+  api_base: https://api.github.com
+  repos:
+    - your-org/your-repo
+  poll_interval: 60s
+  trigger_label: ai             # issues carrying this label are picked up
+  process_all: false            # true = every open issue, ignores trigger_label
+  in_progress_label: "ai:working"
+  done_label: "ai:done"
+  failed_label: "ai:failed"
+  comment_on_failure: true
+
+mcp:
+  servers:
+    # Option A: local github-mcp-server over stdio (https://github.com/github/github-mcp-server)
+    - name: github
+      command: github-mcp-server
+      args: ["stdio", "--toolsets", "issues,pull_requests,repos"]
+      env:
+        GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN}
+      deny_tools: [merge_pull_request, create_repository, fork_repository]
+
+    # Option B: GitHub's hosted remote MCP server
+    # - name: github
+    #   url: https://api.githubcopilot.com/mcp/
+    #   headers:
+    #     Authorization: "Bearer ${GITHUB_TOKEN}"
+
+skills:
+  dir: ./skills
+
+agent:
+  name: gao
+  max_concurrent: 4             # simultaneous issues
+  issue_timeout: 30m
+  state_file: ./gao-state.json
+  # system_prompt_file: ./prompt.md

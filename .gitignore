@@ -1,0 +1,6 @@
+bin/
+config.yaml
+gao-state.json
+gao-state.json.tmp
+*.log
+.env

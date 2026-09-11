@@ -1,0 +1,4 @@
+bin/
+.git/
+config.yaml
+gao-state.json*
