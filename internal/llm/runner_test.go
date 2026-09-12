@@ -89,6 +89,9 @@ func TestRunToolLoop(t *testing.T) {
 	if res.FinalText != "all done" || res.StopReason != "stop" || res.Turns != 2 || res.ToolCalls != 2 || res.InputTokens != 30 || res.OutputTokens != 12 {
 		t.Fatalf("result: %+v", res)
 	}
+	if res.Calls["echo"] != 1 || res.Calls["boom"] != 0 {
+		t.Fatalf("successful call counts: %v", res.Calls)
+	}
 	if executed != 2 {
 		t.Fatalf("executed %d", executed)
 	}
@@ -171,5 +174,41 @@ func TestLegacyMaxTokensParam(t *testing.T) {
 	b := fs.bodies[0]
 	if b["max_tokens"] != float64(100) || b["max_completion_tokens"] != nil || b["reasoning_effort"] != nil {
 		t.Fatalf("body: %v", b)
+	}
+}
+
+type nudgingExec struct {
+	ExecutorFunc
+	msgs []string
+}
+
+func (n *nudgingExec) Nudge(_ Result, calls map[string]int, attempt int) string {
+	if calls["echo"] == 0 && attempt <= 1 {
+		n.msgs = append(n.msgs, "call echo")
+		return "call echo"
+	}
+	return ""
+}
+
+func TestNudgeContinuesLoop(t *testing.T) {
+	// stop without tools -> nudge -> tool turn -> stop
+	fs := newFakeServer(t, endTurn, toolTurn, endTurn)
+	r := New(testCfg(fs.URL), nil)
+	ne := &nudgingExec{ExecutorFunc: func(context.Context, string, json.RawMessage) (string, bool, error) { return "ok", false, nil }}
+	res, err := r.Run(context.Background(), "s", "p", nil, ne)
+	if err != nil || res.Turns != 3 || res.ToolCalls != 2 || len(ne.msgs) != 1 {
+		t.Fatalf("%+v %v nudges=%v", res, err, ne.msgs)
+	}
+	msgs := fs.bodies[1]["messages"].([]any)
+	last := msgs[len(msgs)-1].(map[string]any)
+	if last["role"] != "user" || last["content"] != "call echo" {
+		t.Fatalf("nudge not sent: %v", last)
+	}
+	// nudge gives up after attempt 1 when echo still not called
+	fs2 := newFakeServer(t, endTurn, endTurn)
+	ne2 := &nudgingExec{ExecutorFunc: ne.ExecutorFunc}
+	res, err = New(testCfg(fs2.URL), nil).Run(context.Background(), "s", "p", nil, ne2)
+	if err != nil || res.Turns != 2 || fs2.calls != 2 {
+		t.Fatalf("%+v %v", res, err)
 	}
 }

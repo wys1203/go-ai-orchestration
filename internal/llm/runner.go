@@ -47,12 +47,23 @@ func (f ExecutorFunc) Execute(ctx context.Context, name string, input json.RawMe
 	return f(ctx, name, input)
 }
 
+// Nudger is an optional Executor extension. After the model stops calling
+// tools, Nudge is asked whether the run is really complete. A non-empty
+// return is sent back as a user message and the loop continues; empty ends
+// the run. calls counts successful (non-error) tool invocations by name so
+// far. attempt starts at 1.
+type Nudger interface {
+	Nudge(res Result, calls map[string]int, attempt int) string
+}
+
 // Result summarises a completed run.
 type Result struct {
-	FinalText    string
-	StopReason   string
-	Turns        int
-	ToolCalls    int
+	FinalText  string
+	StopReason string
+	Turns      int
+	ToolCalls  int
+	// Calls counts successful (non-error) tool invocations by name.
+	Calls        map[string]int
 	InputTokens  int64
 	OutputTokens int64
 	Duration     time.Duration
@@ -157,6 +168,9 @@ func (r *Runner) Run(ctx context.Context, system, prompt string, tools []ToolDef
 		{Role: "user", Content: prompt},
 	}
 	toolSpecs := toWire(tools)
+	res.Calls = map[string]int{}
+	nudger, _ := exec.(Nudger)
+	nudges := 0
 
 	for turn := 1; turn <= r.cfg.MaxTurns; turn++ {
 		res.Turns = turn
@@ -189,14 +203,25 @@ func (r *Runner) Run(ctx context.Context, system, prompt string, tools []ToolDef
 				history = append(history, message{Role: "user", Content: "Your previous message was cut off by the output limit. Continue from where you stopped."})
 				continue
 			}
+			if nudger != nil {
+				nudges++
+				if msg := nudger.Nudge(res, res.Calls, nudges); msg != "" {
+					r.log.Info("nudging model", "attempt", nudges)
+					history = append(history, message{Role: "user", Content: msg})
+					continue
+				}
+			}
 			return finish(nil)
 		}
 
-		results := r.executeAll(ctx, calls, exec)
+		results, okCounts := r.executeAll(ctx, calls, exec)
 		if ctx.Err() != nil {
 			return finish(ctx.Err())
 		}
 		res.ToolCalls += len(calls)
+		for name, n := range okCounts {
+			res.Calls[name] += n
+		}
 		history = append(history, results...)
 	}
 	return finish(ErrMaxTurns)
@@ -302,9 +327,10 @@ func toWire(tools []ToolDef) []map[string]any {
 }
 
 // executeAll runs every call concurrently and returns one tool message per
-// call, in the original order.
-func (r *Runner) executeAll(ctx context.Context, calls []toolCall, exec Executor) []message {
+// call, in the original order, plus a count of successful calls by name.
+func (r *Runner) executeAll(ctx context.Context, calls []toolCall, exec Executor) ([]message, map[string]int) {
 	outs := make([]message, len(calls))
+	okFlags := make([]bool, len(calls))
 	var wg sync.WaitGroup
 	for i, c := range calls {
 		wg.Add(1)
@@ -316,7 +342,6 @@ func (r *Runner) executeAll(ctx context.Context, calls []toolCall, exec Executor
 			}
 			t0 := time.Now()
 			content, isErr, err := exec.Execute(ctx, c.Function.Name, json.RawMessage(args))
-			r.log.Debug("tool call", "tool", c.Function.Name, "is_error", isErr, "err", err, "took", time.Since(t0))
 			switch {
 			case err != nil:
 				content = "tool execution error: " + err.Error()
@@ -327,11 +352,23 @@ func (r *Runner) executeAll(ctx context.Context, calls []toolCall, exec Executor
 			if content == "" {
 				content = "(empty result)"
 			}
+			if isErr {
+				r.log.Warn("tool call failed", "tool", c.Function.Name, "input", truncate(args, 300), "result", truncate(content, 300), "took", time.Since(t0))
+			} else {
+				r.log.Debug("tool call", "tool", c.Function.Name, "input", truncate(args, 200), "took", time.Since(t0))
+			}
+			okFlags[i] = !isErr
 			outs[i] = message{Role: "tool", ToolCallID: c.ID, Content: content}
 		}(i, c)
 	}
 	wg.Wait()
-	return outs
+	ok := map[string]int{}
+	for i, c := range calls {
+		if okFlags[i] {
+			ok[c.Function.Name]++
+		}
+	}
+	return outs, ok
 }
 
 func truncate(s string, n int) string {

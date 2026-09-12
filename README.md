@@ -116,6 +116,13 @@ system prompt 只放 name 與 description；模型需要時呼叫 `load_skill` �
 
 本機模型請選 Ollama 標示支援 tools 的模型，例如 `qwen3:8b`、`llama3.1:8b`、`mistral-nemo`；`qwen2.5-coder` 系列會把工具呼叫寫成文字而非原生 `tool_calls`，不適用。可用 `gao ask -prompt "Use the load_skill tool to read issue-triage"` 快速確認，輸出的 `tool_calls` 應大於 0。
 
+## 安全防護
+
+- **Repo 鎖定**：任何 MCP 工具呼叫的 `owner` / `repo` 參數必須等於目前 issue 的 repo，否則拒絕並把原因回給模型。實測小模型會直接抄工具說明裡的範例參數（`octocat/Hello-World`），這個防護是必要的。`allow_other_repos: true` 可關閉。
+- **Issue 鎖定**：`issue_scoped_tools` 列出的寫入工具，`issue_number` 必須等於目前處理的 issue。
+- **必要工具**：`required_tools` 沒有成功呼叫時，模型會被提醒最多 `max_nudges` 次；仍未完成則整個 issue 判定失敗、貼 `ai:failed`，不會誤標完成。
+- **工具黑白名單**：每個 MCP server 可設 `allow_tools` / `deny_tools`，建議把 merge、delete、force push 類工具列入 deny。
+
 ## 生命週期與重試
 
 1. 輪詢到帶 `trigger_label` 且沒有 `done` / `failed` / `in_progress` label 的 open issue

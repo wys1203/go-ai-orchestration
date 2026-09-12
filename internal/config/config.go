@@ -100,6 +100,18 @@ type Agent struct {
 	IssueTimeout     time.Duration `yaml:"issue_timeout"`
 	StateFile        string        `yaml:"state_file"`
 	SystemPromptFile string        `yaml:"system_prompt_file"`
+	// RequiredTools lists tool names the model must call at least once per
+	// issue (e.g. github__add_issue_comment). If the model stops without
+	// calling them it is reminded up to MaxNudges times.
+	RequiredTools []string `yaml:"required_tools"`
+	MaxNudges     int      `yaml:"max_nudges"`
+	// AllowOtherRepos lifts the guard that rejects any tool call whose
+	// owner/repo arguments differ from the issue's repository. Off by default:
+	// models copy example arguments from tool descriptions.
+	AllowOtherRepos bool `yaml:"allow_other_repos"`
+	// IssueScopedTools are write tools whose issue_number argument must equal
+	// the issue being processed.
+	IssueScopedTools []string `yaml:"issue_scoped_tools"`
 }
 
 // Default returns a configuration with sensible defaults applied.
@@ -131,6 +143,10 @@ func Default() Config {
 			MaxConcurrent: 4,
 			IssueTimeout:  30 * time.Minute,
 			StateFile:     "./gao-state.json",
+			MaxNudges:     2,
+			IssueScopedTools: []string{
+				"github__add_issue_comment", "github__issue_write", "github__sub_issue_write",
+			},
 		},
 	}
 }

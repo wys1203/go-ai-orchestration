@@ -55,4 +55,13 @@ agent:
   max_concurrent: 4             # simultaneous issues
   issue_timeout: 30m
   state_file: ./gao-state.json
+  # Tools the model must call before it may finish; it is reminded up to
+  # max_nudges times. Helps smaller models that stop early.
+  required_tools: [github__add_issue_comment]
+  max_nudges: 2
+  # Safety guards (on by default): tool calls whose owner/repo differ from the
+  # issue's repository are rejected, and these write tools must target the
+  # issue being processed. Models do copy example arguments from tool docs.
+  allow_other_repos: false
+  issue_scoped_tools: [github__add_issue_comment, github__issue_write, github__sub_issue_write]
   # system_prompt_file: ./prompt.md
