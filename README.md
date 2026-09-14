@@ -116,6 +116,8 @@ system prompt 只放 name 與 description；模型需要時呼叫 `load_skill` �
 
 本機模型請選 Ollama 標示支援 tools 的模型，例如 `qwen3:8b`、`llama3.1:8b`、`mistral-nemo`；`qwen2.5-coder` 系列會把工具呼叫寫成文字而非原生 `tool_calls`，不適用。可用 `gao ask -prompt "Use the load_skill tool to read issue-triage"` 快速確認，輸出的 `tool_calls` 應大於 0。
 
+詳細的新增步驟、命名規則與常見陷阱見 [`docs/extending.md`](docs/extending.md)。
+
 ## 安全防護
 
 - **Repo 鎖定**：任何 MCP 工具呼叫的 `owner` / `repo` 參數必須等於目前 issue 的 repo，否則拒絕並把原因回給模型。實測小模型會直接抄工具說明裡的範例參數（`octocat/Hello-World`），這個防護是必要的。`allow_other_repos: true` 可關閉。
