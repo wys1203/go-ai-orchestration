@@ -45,6 +45,27 @@ streamable HTTP：
 
 所有字串值支援 `${VAR}` 與 `${VAR:-預設值}` 展開，token 不要寫死在檔案裡。
 
+### 1a. `command` 可以是路徑
+
+`command` 直接交給 Go 的 `exec.Command`，沒有經過 shell。規則是：字串**不含路徑分隔符**時走 `$PATH` 尋找，**含分隔符**時當成路徑直接用。
+
+實測結果（2026-09-16，用 `gao tools` 驗證）：
+
+| 寫法 | 結果 | 說明 |
+|---|---|---|
+| `github-mcp-server` | 可用 | 從 `$PATH` 尋找 |
+| `/opt/mcp/my-server` | 可用 | 絕對路徑 |
+| `./vendor/my-server` | 可用 | 相對於 **gao 的工作目錄**，不是設定檔所在目錄 |
+| `${HOME}/bin/my-server` | 可用 | 設定檔的環境變數展開先發生，展開後才是路徑 |
+| `~/bin/my-server` | **不可用** | 沒有 shell，波浪號不會展開，錯誤是 `fork/exec ~/...: no such file or directory` |
+
+兩個實務建議：
+
+- 家目錄用 `${HOME}/...`，不要用 `~`。
+- 相對路徑在容器或 systemd 底下很容易因為工作目錄不同而失效，部署時優先用絕對路徑。
+
+路徑錯誤會在啟動時就失敗，訊息是 `mcp <name>: connect: fork/exec <path>: no such file or directory`，不會等到處理 issue 才爆。
+
 ### 2. 確認工具有出現
 
 ```bash
